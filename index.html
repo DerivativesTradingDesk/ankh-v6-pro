@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ANKH V5 PRO: ALWAYS-ON TERMINAL</title>
+    <style>
+        :root { --bg: #020202; --card: #0d0d0d; --accent: #00d4ff; --up: #00ff88; --down: #ff4444; --border: #1a1a1a; --text: #eee; }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        
+        header { background: #080808; border-bottom: 1px solid #222; padding: 10px 25px; display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; }
+        .header-titles h1 { margin: 0; font-size: 1.2rem; font-weight: 900; letter-spacing: 2px; }
+        .search-wrap { display: flex; gap: 8px; justify-content: center; }
+        input { background: #151515; border: 1px solid #333; color: white; padding: 8px; border-radius: 4px; width: 250px; outline: none; }
+        button { background: var(--accent); color: black; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+
+        main { display: grid; grid-template-columns: 320px 1fr 320px; gap: 12px; padding: 12px; flex: 1; overflow: hidden; }
+        .panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow-y: auto; }
+        
+        .widget-box { background: #111; border-left: 3px solid var(--accent); padding: 12px; border-radius: 4px; margin-bottom: 15px; }
+        .prob-score { font-size: 2.2rem; font-weight: 900; color: var(--up); font-family: monospace; }
+
+        .ticker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+        .ticker-card { background: #121212; border: 1px solid #222; padding: 10px; border-radius: 6px; cursor: pointer; transition: 0.1s; }
+        .ticker-card:hover { border-color: var(--accent); background: #1a1a1a; }
+        .sym { font-size: 0.85rem; font-weight: 800; color: var(--accent); }
+        .price { font-size: 1.2rem; font-family: monospace; font-weight: bold; margin: 4px 0; }
+        .chg-sub { font-size: 0.7rem; font-weight: bold; }
+
+        .ticker-bar { background: #080808; border-top: 1px solid #222; padding: 8px; white-space: nowrap; overflow: hidden; }
+        .ticker-text { display: inline-block; animation: scroll 50s linear infinite; font-family: monospace; font-size: 0.8rem; }
+        @keyframes scroll { from { transform: translateX(100%); } to { transform: translateX(-100%); } }
+
+        .up { color: var(--up); } .down { color: var(--down); }
+        .sector-title { color: #444; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; font-weight: bold; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #222; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-titles">
+        <h1>ANKH <span style="color:var(--accent)">V5 PRO</span></h1>
+        <div id="live-date" style="font-size:0.6rem; color:#444">LOADING DATE...</div>
+    </div>
+    <div class="search-wrap">
+        <input type="text" id="sInput" placeholder="Symbol (AAPL, NVDA, BTC/USD)">
+        <button onclick="addAsset()">ANALYZE & ADD</button>
+    </div>
+    <div style="text-align: right; font-family: monospace; font-size: 0.8rem;" id="clock">00:00:00</div>
+</header>
+
+<main>
+    <div class="panel">
+        <div class="sector-title">AI Sentiment (Weekend Cache)</div>
+        <div class="widget-box">
+            <div id="p-sym" style="font-weight:bold; color:var(--accent); font-size: 0.7rem;">READY FOR SCAN</div>
+            <div class="prob-score" id="p-score">--%</div>
+            <div style="font-size:0.5rem; color:#444">WALL ST. CONFIDENCE RATING</div>
+        </div>
+        <div class="sector-title">Energy Arb (Friday Final)</div>
+        <div class="widget-box" style="border-left-color: #ffae00;">
+            <div id="oil-arb" style="font-family:monospace; font-size:0.75rem;">SCANNING OIL DESK...</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="sector-title">Institutional Watchlist (Friday Last Trade)</div>
+        <div class="ticker-grid" id="watchlist-container"></div>
+    </div>
+
+    <div class="panel">
+        <div class="sector-title">Global Intelligence Feed</div>
+        <div id="news-feed" style="font-size: 0.7rem;"></div>
+    </div>
+</main>
+
+<div class="ticker-bar">
+    <div class="ticker-text">
+        S&P 500: 5,204.34 (+0.44%) | NASDAQ: 16,332.22 (+1.12%) | DOW: 38,904.04 (-0.12%) | BTC: $69,420 | GOLD: $2,329.10 | CRUDE: $86.91 | 10Y YIELD: 4.38%
+    </div>
+</div>
+
+<script>
+    const API = { FINN: 'cot4gfhr01qgmopn3vag', ALPHA: 'WNLJBOUW9NKEVHYI' };
+    let watchlist = ['AG','ATAI','APLE','BBD','BSBR','CIG','DVYA','DVYE','ELP','EQIX','F','HL','ITUB','KGC','LB','MAIN','NGD','NMG','PBR','PFF','PHO','REGI','SAN','SLG','TU','VEU','VNQ','WRN','XOM','XLE'];
+
+    async function init() {
+        render();
+        updateNews();
+        updateEnergy();
+        refresh();
+        setInterval(refresh, 60000);
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString();
+            document.getElementById('live-date').innerText = now.toDateString().toUpperCase();
+        }, 1000);
+    }
+
+    function render() {
+        document.getElementById('watchlist-container').innerHTML = watchlist.map(s => {
+            const id = s.replace(/[^a-z0-9]/gi, '_');
+            return `<div class="ticker-card" onclick="analyze('${s}')">
+                <div class="sym">${s}</div>
+                <div class="price" id="prc-${id}">0.00</div>
+                <div id="chg-${id}" class="chg-sub">$-- (0.00%)</div>
+            </div>`;
+        }).join('');
+    }
+
+    async function refresh() {
+        for (let s of watchlist) {
+            const id = s.replace(/[^a-z0-9]/gi, '_');
+            try {
+                const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${s}&token=${API.FINN}`).then(r => r.json());
+                // FALLBACK LOGIC: If 'c' (current) is 0, use 'pc' (prev close)
+                const price = res.c || res.pc;
+                const diff = (price - res.pc).toFixed(2);
+                document.getElementById(`prc-${id}`).innerText = price.toFixed(2);
+                document.getElementById(`chg-${id}`).innerText = `$${diff} (${res.dp.toFixed(2)}%)`;
+                document.getElementById(`chg-${id}`).className = `chg-sub ${res.dp >= 0 ? 'up' : 'down'}`;
+            } catch(e) {}
+        }
+    }
+
+    async function analyze(s) {
+        document.getElementById('p-sym').innerText = `ANALYZING ${s}...`;
+        const res = await fetch(`https://finnhub.io/api/v1/stock/recommendation?symbol=${s}&token=${API.FINN}`).then(r => r.json());
+        if (res && res.length > 0) {
+            const l = res[0];
+            const score = (((l.strongBuy + l.buy) / (l.strongBuy + l.buy + l.hold + l.sell + l.strongSell)) * 100).toFixed(1);
+            document.getElementById('p-sym').innerText = `${s} SENTIMENT`;
+            document.getElementById('p-score').innerText = `${score}%`;
+            document.getElementById('p-score').style.color = score > 50 ? 'var(--up)' : 'var(--down)';
+        }
+    }
+
+    async function updateEnergy() {
+        const w = await fetch(`https://www.alphavantage.co/query?function=WTI&apikey=${API.ALPHA}`).then(r => r.json());
+        const b = await fetch(`https://www.alphavantage.co/query?function=BRENT&apikey=${API.ALPHA}`).then(r => r.json());
+        if (w.data) {
+            const wv = parseFloat(w.data[0].value), bv = parseFloat(b.data[0].value);
+            document.getElementById('oil-arb').innerText = `WTI: $${wv} | BRENT: $${bv}\nSPREAD: $${Math.abs(wv-bv).toFixed(2)}`;
+        }
+    }
+
+    async function updateNews() {
+        const res = await fetch(`https://finnhub.io/api/v1/news?category=general&token=${API.FINN}`).then(r => r.json());
+        document.getElementById('news-feed').innerHTML = res.slice(0,12).map(n => `
+            <div style="margin-bottom:10px; border-bottom:1px solid #1a1a1a; padding-bottom:5px; cursor:pointer" onclick="window.open('${n.url}')">
+                <b>${n.headline}</b><br><small style="color:#555">${n.source}</small>
+            </div>`).join('');
+    }
+
+    function addAsset() {
+        const val = document.getElementById('sInput').value.toUpperCase();
+        if (val && !watchlist.includes(val)) {
+            watchlist.unshift(val);
+            render(); refresh(); analyze(val);
+            document.getElementById('sInput').value = '';
+        }
+    }
+
+    window.onload = init;
+</script>
+</body>
+</html>
